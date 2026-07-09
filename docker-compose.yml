@@ -1,0 +1,78 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ghostshift
+      POSTGRES_PASSWORD: ghostshift
+      POSTGRES_DB: ghostshift
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ghostshift"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      DEBUG: "true"
+      LOG_LEVEL: "DEBUG"
+      DATABASE_URL: "postgresql://ghostshift:ghostshift@postgres:5432/ghostshift"
+      DATABASE_HOST: "postgres"
+      DATABASE_PORT: "5432"
+      CORS_ORIGINS: "http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173"
+      REDIS_URL: "redis://redis:6379/0"
+      REDIS_HOST: "redis"
+      REDIS_PORT: "6379"
+      RATE_LIMIT_MAX: "500"
+      RATE_LIMIT_WINDOW: "60"
+      SEED_DEMO: "true"
+      JWT_SECRET: "df6f2a3e12905da0ba69355ed28551e0c35ba7b0cccd2f7fc641ad3cfd870606"
+      GROQ_KEY_A: "gsk_dZNOxx9IKIaq16KxaqphWGdyb3FY"
+      GROQ_KEY_B: "IMlx7egplH4Ba6KhVySb1tzV"
+      GROQ_MODEL: "llama-3.3-70b-versatile"
+    command: >
+      sh -c "uvicorn main:app --host 0.0.0.0 --port 8000 --reload"
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+      - /app/venv
+      - /app/__pycache__
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  frontend:
+    image: node:22-alpine
+    working_dir: /app
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - VITE_API_URL=/api
+      - VITE_WS_URL=/ws
+      - CHOKIDAR_USEPOLLING=true
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:
